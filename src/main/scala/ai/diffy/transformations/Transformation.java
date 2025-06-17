@@ -1,13 +1,17 @@
 package ai.diffy.transformations;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Table;
 
-@Document
+@Entity
+@Table(name = "transformation")
 public class Transformation {
     @Id
     public String injectionPoint;
     public String transformationJs;
+
+    public Transformation() {}
 
     public Transformation(String injectionPoint, String transformationJs) {
         this.injectionPoint = injectionPoint;

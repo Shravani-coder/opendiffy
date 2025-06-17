@@ -1,30 +1,32 @@
 version: "3.8"
 
 services:
-  mongodb:
-    image: mongo
-    container_name: mongodb
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=root
-      - MONGO_INITDB_ROOT_PASSWORD=pass12345
+      - MYSQL_ROOT_PASSWORD=Shravani@12
+      - MYSQL_DATABASE=diff_metrics
     ports:
-      - 27017:27017
+      - 3306:3306
     healthcheck:
-      test: echo 'db.stats().ok' | mongo localhost:27017/test --quiet
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 10s
       retries: 10
     restart: unless-stopped
+    volumes:
+      - mysql_data:/var/lib/mysql
 
   loki:
     image: grafana/loki:2.2.0
     command: -config.file=/etc/loki/loki-local.yaml
     user: "0"
     ports:
-      - "3101:3100"                                   # loki needs to be exposed so it receives logs
+      - "3101:3100"
     environment:
       - JAEGER_AGENT_HOST=tempo
-      - JAEGER_ENDPOINT=http://tempo:14268/api/traces # send traces to Tempo
+      - JAEGER_ENDPOINT=http://tempo:14268/api/traces
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
     volumes:
@@ -39,10 +41,10 @@ services:
       - ./data/tempo-data:/tmp/tempo
     restart: unless-stopped
     ports:
-      - "14268:14268"  # jaeger ingest, Jaeger - Thrift HTTP
-      - "14250:14250"  # Jaeger - GRPC
-      - "55680:55680"  # OpenTelemetry
-      - "3102:3100"   # tempo
+      - "14268:14268"
+      - "14250:14250"
+      - "55680:55680"
+      - "3102:3100"
 
   tempo-query:
     image: grafana/tempo-query:0.7.0
@@ -50,7 +52,7 @@ services:
     volumes:
       - ./etc/tempo-query.yaml:/etc/tempo-query.yaml
     ports:
-      - "16686:16686"  # jaeger-ui
+      - "16686:16686"
     depends_on:
       - tempo
 
@@ -68,13 +70,14 @@ services:
     ports:
       - "8888:8888"
       - "8880:8880"
-#    env_file: "./diffy.env"
     environment:
-      spring.data.mongodb.authentication-database: admin
-      spring.data.mongodb.host: "mongodb"
-      spring.data.mongodb.port: 27017
-      spring.data.mongodb.username: root
-      spring.data.mongodb.password: pass12345
+      spring.datasource.url: jdbc:mysql://mysql:3306/diff_metrics?useSSL=false&serverTimezone=UTC
+      spring.datasource.username: root
+      spring.datasource.password: Shravani@12
+      spring.datasource.driver-class-name: com.mysql.cj.jdbc.Driver
+      spring.jpa.hibernate.ddl-auto: update
+      spring.jpa.show-sql: "true"
+      spring.jpa.database-platform: org.hibernate.dialect.MySQL8Dialect
       candidate: "candidate:5000"
       master.primary: "primary:5000"
       master.secondary: "secondary:5000"
@@ -99,13 +102,12 @@ services:
       logging.file.max-size: "10MB"
       logging.file.max-history: 1
       logging.file.clean-history-on-start: "true"
-      spring.mongodb.embedded.version: "4.4.13"
       dockerComposeLocal: "true"
     volumes:
       - ./data/logs:/app/logs
     depends_on:
       - tempo
-      - mongodb
+      - mysql
       - primary
       - secondary
       - candidate
@@ -148,3 +150,6 @@ services:
       - prometheus
       - tempo-query
       - loki
+
+volumes:
+  mysql_data:

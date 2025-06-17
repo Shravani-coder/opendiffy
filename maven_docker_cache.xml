@@ -52,9 +52,21 @@
             <artifactId>scala-library</artifactId>
             <version>2.13.8</version>
         </dependency>
+        <!-- Removed MongoDB dependencies -->
+        <!-- Added MySQL and JPA dependencies -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-mongodb</artifactId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.vladmihalcea</groupId>
+            <artifactId>hibernate-types-52</artifactId>
+            <version>2.21.1</version>
         </dependency>
         <dependency>
             <groupId>io.opentelemetry</groupId>
@@ -95,7 +107,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
-<!--        For osx M1 Chip support see https://github.com/opendiffy/diffy/issues/68 -->
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-resolver-dns-native-macos</artifactId>
@@ -121,11 +132,7 @@
             <artifactId>jackson-module-scala_2.13</artifactId>
             <version>2.13.2</version>
         </dependency>
-        <dependency>
-            <groupId>de.flapdoodle.embed</groupId>
-            <artifactId>de.flapdoodle.embed.mongo</artifactId>
-            <version>3.4.9</version>
-        </dependency>
+        <!-- Removed embedded MongoDB for tests -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -168,7 +175,6 @@
                         <id>scala-compile-first</id>
                         <phase>process-resources</phase>
                         <goals>
-<!--                            <goal>add-source</goal>-->
                             <goal>compile</goal>
                         </goals>
                     </execution>

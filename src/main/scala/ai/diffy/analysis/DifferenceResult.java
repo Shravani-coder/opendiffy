@@ -1,23 +1,31 @@
 package ai.diffy.analysis;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
-
+import javax.persistence.*;
 import java.util.List;
-import java.util.Map;
 
-@Document
+@Entity
+@Table(name = "difference_result")
 public class DifferenceResult {
     @Id
-    public final String id;
+    public String id;
+
     public String traceId;
     public String endpoint;
-    @Indexed
+
+    @Column
     public Long timestampMsec;
+
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @JoinColumn(name = "difference_result_id")
     public List<FieldDifference> differences;
+
+    @Column(columnDefinition = "TEXT")
     public String request;
+
+    @Embedded
     public Responses responses;
+
+    public DifferenceResult() {}
 
     public DifferenceResult(String id, String traceId, String endpoint, Long timestampMsec, List<FieldDifference> differences, String request, Responses responses) {
         this.id = id;

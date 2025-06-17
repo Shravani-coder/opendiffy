@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.{GetMapping, PathVariable, PostMa
 
 import java.util.Date
 import scala.jdk.CollectionConverters._
+import scala.jdk.OptionConverters._
 
 @RestController
 class ApiController(
@@ -35,7 +36,7 @@ class ApiController(
         Renderer.fields(
           // Only show fields that are above the thresholds
           if (excludeNoise) {
-            val noisyFields = noise.findById(ep).map(_.noisyfields.asScala.toSeq).orElse(Nil)
+            val noisyFields = noise.findById(ep).toScala.map(_.noisyfields.asScala.toSeq).getOrElse(Nil)
             joinedEndpoint.fields.filter { case ((path, field)) =>
               thresholdFilter(field) && !noisyFields.exists(path.startsWith)
             }
@@ -156,12 +157,12 @@ class ApiController(
     if(id.isEmpty) {
       RequestPurgedException
     } else {
-      repository.findById(id) map { case dr =>
+      repository.findById(id).toScala.map { dr =>
         Renderer.differenceResult(
           dr,
           includeRequest
         )
-      } orElse(RequestPurgedException)
+      }.getOrElse(RequestPurgedException)
     }
   }
 

@@ -4,7 +4,6 @@ import ai.diffy.functional.endpoints.Endpoint;
 import ai.diffy.interpreter.Transformer;
 import ai.diffy.proxy.HttpRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
@@ -13,7 +12,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Component
 @Service
 public class TransformationCachingService {
     @Autowired

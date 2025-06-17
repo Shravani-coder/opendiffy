@@ -1,14 +1,21 @@
 package ai.diffy.repository;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-
+import javax.persistence.ElementCollection;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Table;
 import java.util.List;
 
-@Document
+@Entity
+@Table(name = "noise")
 public class Noise {
-    @Id public String endpoint;
+    @Id
+    public String endpoint;
+
+    @ElementCollection
     public List<String> noisyfields;
+
+    public Noise() {}
 
     public Noise(String endpoint, List<String> noisyfields) {
         this.endpoint = endpoint;

@@ -3,8 +3,8 @@ package ai.diffy.lifter
 import ai.diffy.Settings
 import ai.diffy.proxy.{HttpMessage, HttpRequest, HttpResponse}
 import ai.diffy.util.ResourceMatcher
-import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.stereotype.Component
+// import org.springframework.beans.factory.annotation.Autowired
+// import org.springframework.stereotype.Component // <-- REMOVE this line
 
 import scala.collection.JavaConverters._
 
