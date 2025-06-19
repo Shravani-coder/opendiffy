@@ -1,6 +1,0 @@
-language: java
-os:
-  - linux
-  - osx
-  - windows
-script: mvn package -DskipTests
