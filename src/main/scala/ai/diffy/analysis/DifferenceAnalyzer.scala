@@ -2,121 +2,120 @@ package ai.diffy.analysis
 
 import ai.diffy.compare.{Difference, NoDifference, PrimitiveDifference}
 import ai.diffy.flat.{FlatEntry, FlatObject}
-import ai.diffy.lifter.{AnalysisRequest, JsonLifter, Message}
-import ai.diffy.repository.DifferenceResultRepository
+import ai.diffy.lifter.{AnalysisRequest, Message, JsonLifter}
 import io.opentelemetry.api.trace.Span
 import org.slf4j.LoggerFactory
 
-import java.util.Date
-import scala.jdk.CollectionConverters.SeqHasAsJava
-import scala.language.postfixOps
-import scala.util.Random
+import java.util.{Date, UUID}
+import scala.jdk.CollectionConverters._
 
 object DifferenceAnalyzer {
   val log = LoggerFactory.getLogger(classOf[DifferenceAnalyzer])
   val UndefinedEndpoint = Some("undefined_endpoint")
-  def normalizeEndpointName(name: String) = name.replace("/", "-")
+
+  def normalizeEndpointName(name: String): String =
+    name.replace("/", "-")
+
+
+//Determining Which Endpoint to Use
+  def getEndpointName(
+    reqEp: Option[String],
+    candEp: Option[String],
+    primEp: Option[String],
+    secEp: Option[String]
+  ): Option[String] = {
+    val raw = (reqEp, candEp, primEp, secEp) match {
+      case (Some(_), _, _, _)                 => reqEp
+      case (_, None, None, None)              => UndefinedEndpoint
+      case (_, None, _, _) if primEp == secEp => primEp
+      case (_, None, _, _)                    => None
+      case (_, Some(_), _, _)                 => candEp
+    }
+    raw.map(normalizeEndpointName)
+  }
 }
 
 class DifferenceAnalyzer(
-    rawCounter: RawDifferenceCounter,
+    rawCounter:   RawDifferenceCounter,
     noiseCounter: NoiseDifferenceCounter,
-    store: InMemoryDifferenceCollector)
-{
+    store:        InMemoryDifferenceCollector
+) {
   import DifferenceAnalyzer._
 
-  def analyze(analysisRequest: AnalysisRequest): Option[DifferenceResult] = {
-    apply(analysisRequest.request, analysisRequest.candidate, analysisRequest.primary, analysisRequest.secondary)
-  }
+  def analyze(ar: AnalysisRequest): Option[DifferenceResult] =
+    apply(ar.request, ar.candidate, ar.primary, ar.secondary)
+
   def apply(
-    request: Message,
+    request:   Message,
     candidate: Message,
-    primary: Message,
+    primary:   Message,
     secondary: Message,
-    idKnown: Option[String] = None
+    idKnown:   Option[String] = None
   ): Option[DifferenceResult] = {
-    getEndpointName(request.endpoint, candidate.endpoint,
-        primary.endpoint, secondary.endpoint) flatMap { endpointName =>
-      val requestDiff: Map[String, Difference] =
-        FlatObject.lift(request.result)
-          .rendered map { case FlatEntry(key, value) =>
-          s"request.$key.NoDifference" -> NoDifference(value)
-        } toMap
-//      val requestDiff =
-//        Difference(request.result, request.result)
-//          .flattened map {case (k,v) => s"request.$k" -> v}
+    val runIdOpt = request.result.value.get("run_id").collect { case s: String => s }
 
-      val rawDiff: Map[String, Difference] = requestDiff ++
-        (Difference(primary.result, candidate.result)
-          .flattened map {case (k,v) => s"response.$k" -> v})
+    // Use a standalone UUID as document ID to keep it short
+    val uuid = UUID.randomUUID().toString
 
-      val noiseDiff = requestDiff ++
-        (Difference(primary.result, secondary.result)
-          .flattened map {case (k,v) => s"response.$k" -> v})
+    log.info(s"Starting analysis for docId=$uuid runId=${runIdOpt.getOrElse("N/A")}")
 
-      val id = idKnown.getOrElse(new String(Random.alphanumeric.take(10).toArray))
-      rawCounter.counter.count(endpointName, rawDiff)
-      noiseCounter.counter.count(endpointName, noiseDiff ++ requestDiff)
+    getEndpointName(request.endpoint, candidate.endpoint, primary.endpoint, secondary.endpoint)
+      .flatMap { endpointName =>
+        log.info(s"Endpoint: $endpointName")
 
-      if (rawDiff.size > 0) {
-        val diffResult = new DifferenceResult(
-          id,
-          Span.current().getSpanContext.getTraceId,
-          endpointName,
-          new Date().getTime,
-          differencesToJson(rawDiff).asJava,
-          JsonLifter.encode(request.result),
-          new Responses(
-            JsonLifter.encode(primary.result),
-            JsonLifter.encode(secondary.result),
-            JsonLifter.encode(candidate.result)
-          ));
-        store.create(diffResult)
-        Some(diffResult)
-      } else {
-        log.debug(s"endpoint[$endpointName]diff[$id]=NoDifference")
-        None
+        val requestDiff = FlatObject
+          .lift(request.result)
+          .rendered
+          .map { case FlatEntry(k, v) => s"request.$k.NoDifference" -> NoDifference(v) }
+          .toMap
+
+        val rawDiff = requestDiff ++
+          Difference(primary.result, candidate.result).flattened.map { case (k, v) => s"response.$k" -> v }
+
+        val noiseDiff = requestDiff ++
+          Difference(primary.result, secondary.result).flattened.map { case (k, v) => s"response.$k" -> v }
+
+        log.info(s"Raw diffs: ${rawDiff.size} fields")
+        rawDiff.keys.foreach(k => log.debug(s"   ↪ $k"))
+
+        rawCounter.counter.count(endpointName, rawDiff)
+        noiseCounter.counter.count(endpointName, noiseDiff ++ requestDiff)
+
+        if (rawDiff.nonEmpty) {
+          val dr = new DifferenceResult(
+            uuid,                              // short UUID
+            runIdOpt.getOrElse(uuid),          // runId field unchanged
+            Span.current().getSpanContext.getTraceId,
+            endpointName,
+            new Date().getTime,
+            differencesToJson(rawDiff).asJava,
+            JsonLifter.encode(request.result),
+            new Responses(
+              JsonLifter.encode(primary.result),
+              JsonLifter.encode(secondary.result),
+              JsonLifter.encode(candidate.result)
+            )
+          )
+          log.info(s"DifferenceResult created for runId=${dr.runId}, endpoint=$endpointName, fields=${dr.differences.size}")
+          store.create(dr)
+          Some(dr)
+        } else {
+          log.warn(s" No diffs found for endpoint=$endpointName, docId=$uuid")
+          None
+        }
       }
-    }
   }
 
-  def clear(): Unit = {
-    rawCounter.counter.clear()
-    noiseCounter.counter.clear()
-    store.clear()
-  }
 
-  def differencesToJson(diffs: Map[String, Difference]): Seq[FieldDifference] =
-    diffs.toSeq map {
-      case (field, diff @ PrimitiveDifference(_: Long, _)) =>
+//Converts Scala Difference objects into FieldDifference JSON.
+  def differencesToJson(diffs: Map[String, Difference]) =
+    diffs.toSeq.map {
+      case (field, pd: PrimitiveDifference[_]) =>
         new FieldDifference(
           field,
-          JsonLifter.encode(
-            diff.toMap map {
-              case (k, v) => k -> v.toString
-            }
-          )
+          JsonLifter.encode(pd.toMap.view.mapValues(_.toString).toMap)
         )
-
-      case (field, diff) => new FieldDifference(field, JsonLifter.encode(diff.toMap))
+      case (field, diff) =>
+        new FieldDifference(field, JsonLifter.encode(diff.toMap))
     }
-
-  private[this] def getEndpointName(
-      requestEndpoint: Option[String],
-      candidateEndpoint: Option[String],
-      primaryEndpoint: Option[String],
-      secondaryEndpoint: Option[String]): Option[String] = {
-    val rawEndpointName = (requestEndpoint, candidateEndpoint, primaryEndpoint, secondaryEndpoint) match {
-      case (Some(_), _, _, _) => requestEndpoint
-      // undefined endpoint when action header is missing from all three instances
-      case (_, None, None, None) => UndefinedEndpoint
-      // the assumption is that primary and secondary should call the same endpoint,
-      // otherwise it's noise and we should discard the request
-      case (_, None, _, _) if primaryEndpoint == secondaryEndpoint => primaryEndpoint
-      case (_, None, _, _) => None
-      case (_, Some(_), _, _) => candidateEndpoint
-    }
-
-    rawEndpointName map { normalizeEndpointName(_) }
-  }
 }

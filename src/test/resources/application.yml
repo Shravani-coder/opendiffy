@@ -1,3 +1,4 @@
+
 spring.application.name: "diffy"
 server:
   port: ${http.port:8888}
@@ -20,9 +21,12 @@ allowHttpSideEffects: true
 maxHeaderSize : 33554432
 
 spring:
-  mongodb:
-    embedded:
-      version: "5.0.6"
+  data:
+    mongodb:
+      host: localhost
+      port: 27017
+      database: diffy_metrics
+
 management:
   endpoints:
     web:
@@ -33,3 +37,71 @@ logging:
   pattern:
     console: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr([diffy,%X{trace_id},%X{span_id}]) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m %n%wEx"
     file: "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} %clr(%5p) %clr([diffy,%X{trace_id},%X{span_id}]) %clr(${PID:- }){magenta} %clr(---){faint} %clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %m %n%wEx"
+
+
+# spring:
+#   application:
+#     name: "diffy"
+
+#   # ——— MySQL DataSource & JPA ———
+#   datasource:
+#     url: jdbc:mysql://localhost:3306/diffy_metrics?useSSL=false&serverTimezone=UTC
+#     username: root
+#     password: Shravani@12
+#     driver-class-name: com.mysql.cj.jdbc.Driver
+
+#   jpa:
+#     hibernate:
+#       ddl-auto: update    # auto-create/alter tables
+#     show-sql: true        # log SQL statements
+
+# server:
+#   port: ${http.port:8888}
+
+# proxy:
+#   port: 8880
+
+# candidate: "localhost:9000"
+
+# master:
+#   primary: "localhost:9100"
+#   secondary: "localhost:9200"
+
+# service:
+#   protocol: "http"
+
+# serviceName: "Default Sample Service"
+
+# allowHttpSideEffects: true
+# maxHeaderSize: 33554432
+
+# # ——— Management / Actuator ———
+# management:
+#   endpoints:
+#     web:
+#       exposure:
+#         include: health,info,prometheus, mappings
+
+# # ——— Logging Patterns ———
+# logging:
+#   pattern:
+#     console: >-
+#       %clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint}
+#       %clr(%5p)
+#       %clr([diffy,%X{trace_id},%X{span_id}])
+#       %clr(${PID:- }){magenta}
+#       %clr(---){faint}
+#       %clr([%15.15t]){faint}
+#       %clr(%-40.40logger{39}){cyan}
+#       %clr(:){faint}
+#       %m %n%wEx
+#     file: >-
+#       %clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint}
+#       %clr(%5p)
+#       %clr([diffy,%X{trace_id},%X{span_id}])
+#       %clr(${PID:- }){magenta}
+#       %clr(---){faint}
+#       %clr([%15.15t]){faint}
+#       %clr(%-40.40logger{39}){cyan}
+#       %clr(:){faint}
+#       %m %n%wEx

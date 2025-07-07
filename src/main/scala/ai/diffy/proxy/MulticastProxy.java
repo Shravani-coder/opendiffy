@@ -38,6 +38,7 @@ public class MulticastProxy {
                     liftResponse,
                     responsePicker
             ) -> (HttpRequest request) -> {
+                
                 switch (request.getRoutingMode()) {
                     case primary : return primary.apply(request);
                     case secondary : return secondary.apply(request);
@@ -45,15 +46,15 @@ public class MulticastProxy {
                     case none : return empty;
                     case all : {
 
-                        CompletableFuture<HttpResponse> pr = primary.apply(request);
-                        CompletableFuture<HttpResponse> cr = Future.getAfter(pr, () -> candidate.apply(request));
+                        CompletableFuture<HttpResponse> pr = primary.apply(request); //Send request to primary, store the future in pr.
+                        CompletableFuture<HttpResponse> cr = Future.getAfter(pr, () -> candidate.apply(request)); //Future.getAfter(...) is a helper that runs one task after another future finishes.
                         CompletableFuture<HttpResponse> sr = Future.getAfter(cr, () -> secondary.apply(request));
 
-                        sr.thenApply(msgS -> Try.of(() -> {
-                            Message r = liftRequest.apply(request);
-                            Message c = liftResponse.apply(cr.get());
+                        sr.thenApply(msgS -> Try.of(() -> { //Waits for the secondary response (sr) to complete.
+                            Message r = liftRequest.apply(request); 
+                            Message c = liftResponse.apply(cr.get());      
                             Message p = liftResponse.apply(pr.get());
-                            Message s = liftResponse.apply(sr.get());
+                            Message s = liftResponse.apply(sr.get());  //.get() is used to block and retrieve the actual HttpResponse from the CompletableFuture.
                             return AnalysisRequest.apply(r, c, p, s);
                         })).thenApply(tryRequest -> tryRequest.map(analyzer));
                         return responsePicker.apply(Tuples.of(pr, cr, sr));
