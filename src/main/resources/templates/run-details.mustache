@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Run {{runId}} Details</title>
+</head>
+<body>
+  <h1>Requests for run {{runId}}</h1>
+  <table border="1" cellpadding="5">
+    <thead>
+      <tr>
+        <th>Request ID</th><th>Total Diffs</th><th>Matched Fields</th>
+      </tr>
+    </thead>
+    <tbody id="diff-table-body"></tbody>
+  </table>
+
+  <script>
+    const runId = "{{runId}}";
+    fetch(`/api/runs/${runId}/request_diffs`)
+      .then(r => r.json())
+      .then(diffs => {
+        const tbody = document.getElementById('diff-table-body');
+        diffs.forEach(d => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${d.requestId}</td>
+            <td>${d.totalDifferences}</td>
+            <td>${d.matchedFields}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      })
+      .catch(console.error);
+  </script>
+</body>
+</html>

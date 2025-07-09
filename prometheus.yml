@@ -1,0 +1,8 @@
+# prometheus.yml
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'diffy'  #to scrape the metrics endpoint provided by diffy 
+    static_configs:
+      - targets: ['localhost:8888']

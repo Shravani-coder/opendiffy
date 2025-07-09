@@ -2,6 +2,7 @@ package ai.diffy.proxy;
 
 import ai.diffy.Settings;
 import ai.diffy.analysis.*;
+import ai.diffy.functional.algebra.monoids.functions.BinaryOperator;
 import ai.diffy.functional.endpoints.Endpoint;
 import ai.diffy.functional.endpoints.SeptaDependentEndpoint;
 import ai.diffy.functional.topology.Async;
@@ -31,7 +32,6 @@ import scala.Option;
 import java.util.Date;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import ai.diffy.functional.algebra.monoids.functions.BinaryOperator;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -46,13 +46,13 @@ public class ReactorHttpDifferenceProxy {
     public final TransformationCachingService transformations;
     volatile public Date lastReset = new Date();
 
-    private final Endpoint<HttpServerRequest,CompletableFuture<HttpResponse>> multicastProxy;
+    private final Endpoint<HttpServerRequest, CompletableFuture<HttpResponse>> multicastProxy;
     private final Endpoint<HttpServerRequest, CompletableFuture<HttpResponse>> loggedMulticastProxy;
 
     private final Endpoint<HttpRequest, CompletableFuture<HttpResponse>> primary;
     private final Endpoint<HttpRequest, CompletableFuture<HttpResponse>> secondary;
     private final Endpoint<HttpRequest, CompletableFuture<HttpResponse>> candidate;
-    private final Endpoint<AnalysisRequest, CompletableFuture<Option<DifferenceResult>>> analyzer;
+    private final Endpoint<AnalysisRequest, CompletableFuture<Option<DifferenceResult>>> analyzerWithRepo;
 
     private final HttpLifter lifter;
     private final Function<
@@ -63,8 +63,10 @@ public class ReactorHttpDifferenceProxy {
                     >,
             CompletableFuture<HttpResponse>
             > responsePicker;
-    private static CompletableFuture<HttpResponse> None =
-            CompletableFuture.completedFuture(new HttpResponse(HttpResponseStatus.OK.toString(), EmptyHttpHeaders.INSTANCE,""));
+
+    private static final CompletableFuture<HttpResponse> None =
+            CompletableFuture.completedFuture(new HttpResponse(HttpResponseStatus.OK.toString(), EmptyHttpHeaders.INSTANCE, ""));
+
     public ReactorHttpDifferenceProxy(
             @Autowired Settings settings,
             @Autowired DifferenceResultRepository repository,
@@ -72,75 +74,62 @@ public class ReactorHttpDifferenceProxy {
         this.settings = settings;
         this.transformations = transformations;
         this.collector = new InMemoryDifferenceCollector();
+
         RawDifferenceCounter raw = RawDifferenceCounter.apply(new InMemoryDifferenceCounter("raw"));
         NoiseDifferenceCounter noise = NoiseDifferenceCounter.apply(new InMemoryDifferenceCounter("noise"));
-        this.joinedDifferences = JoinedDifferences.apply(raw,noise);
+        this.joinedDifferences = JoinedDifferences.apply(raw, noise);
+
         this.responsePicker = t3 -> {
             switch (settings.responseMode()) {
-                case primary : return t3.getT1();
-                case candidate : return t3.getT2();
-                case secondary : return t3.getT3();
-                case none : return None;
+                case primary: return t3.getT1();
+                case candidate: return t3.getT2();
+                case secondary: return t3.getT3();
+                case none: return None;
             }
             return None;
         };
 
         this.lifter = new HttpLifter(settings);
-        log.info("Starting Proxy server on port "+ settings.servicePort());
+        log.info("Starting Proxy server on port " + settings.servicePort());
 
-        /**
-         * Let's build a topology
-         */
-        primary = Async.common(HttpEndpoint.from(
-                "primary",
-                settings.primary(),
-                settings.maxHeaderSize()
-        ));
-        secondary = Async.common(HttpEndpoint.from(
-                "secondary",
-                settings.secondary(),
-                settings.maxHeaderSize()
-        ));
-        candidate = Async.common(HttpEndpoint.from(
-                "candidate", settings.candidate(),
-                settings.maxHeaderSize()
-        ));
-        analyzer = Async.common(Endpoint.from(
-            "analyzerWithRepo",
+        primary = Async.common(HttpEndpoint.from("primary", settings.primary(), settings.maxHeaderSize()));
+        secondary = Async.common(HttpEndpoint.from("secondary", settings.secondary(), settings.maxHeaderSize()));
+        candidate = Async.common(HttpEndpoint.from("candidate", settings.candidate(), settings.maxHeaderSize()));
+
+        analyzerWithRepo = Async.common(Endpoint.from(
+                "analyzerWithRepo",
                 Endpoint.from("analyzer", () -> new DifferenceAnalyzer(raw, noise, collector)::analyze),
                 Endpoint.from("repo", () -> repository::save),
                 (BinaryOperator<AnalysisRequest,
                         AnalysisRequest, Option<DifferenceResult>,
                         DifferenceResult, DifferenceResult,
-                        Option<DifferenceResult>>) (analyzerLambda, repoSave) -> analyzerLambda.andThen(ro -> ro.map(r -> repoSave.apply(r)))
+                        Option<DifferenceResult>>) (analyzerLambda, repoSave) -> analyzerLambda.andThen(ro -> ro.map(r -> {
+                    log.info(" Saving DifferenceResult with runId=" + r.runId);
+                    DifferenceResult saved = repoSave.apply(r);
+                    log.info(" Saved DifferenceResult: _id=" + saved.id + ", runId=" + saved.runId + ", endpoint=" + saved.endpoint);
+                    return saved;
+                }))
         ));
-        multicastProxy =
-            Endpoint.from(
+
+        multicastProxy = Endpoint.from(
                 "buffer",
                 HttpEndpoint.RequestBuffer,
                 Endpoint.from(
-                    "proxy",
-                    primary,
-                    secondary,
-                    candidate,
-                    analyzer,
-                    Endpoint.from("liftRequest", ()-> lifter::liftRequest),
-                    Endpoint.from("liftResponse", ()-> lifter::liftResponse),
-                    Endpoint.from("responsePicker", () -> responsePicker),
-                    MulticastProxy.Operator
+                        "proxy",
+                        primary,
+                        secondary,
+                        candidate,
+                        analyzerWithRepo,
+                        Endpoint.from("liftRequest", () -> lifter::liftRequest),
+                        Endpoint.from("liftResponse", () -> lifter::liftResponse),
+                        Endpoint.from("responsePicker", () -> responsePicker),
+                        MulticastProxy.Operator
                 ),
                 (buffer, proxy) -> buffer.andThen(proxy)
-            );
-        /**
-         * Now that our topology is ready let's install some filter middleware.
-         * In this example we will install an InvocationLogger that monitors
-         * the beginning and end of a NameEndpoint invocation
-         */
+        );
 
         loggedMulticastProxy = multicastProxy;
-        /**
-         * All set. We should be able to see InvocationLogger messages in the logs now.
-         */
+
         server = HttpServer.create()
                 .port(settings.servicePort())
                 .httpRequestDecoder(httpRequestDecoderSpec ->
@@ -150,10 +139,11 @@ public class ReactorHttpDifferenceProxy {
     }
 
     private Publisher<Void> selectHandler(HttpServerRequest req, HttpServerResponse res) {
-        if(!settings.allowHttpSideEffects() && methodsWithSideEffects.contains(req.method())){
+        if (!settings.allowHttpSideEffects() && methodsWithSideEffects.contains(req.method())) {
             log.info("Ignoring {} request for safety. Use --allowHttpSideEffects=true to turn safety off.", req.method());
             return res.send();
         }
+
         Endpoint<HttpRequest, CompletableFuture<HttpResponse>> transformedPrimary = transformations.apply(TransformationEdge.primary, primary);
         Endpoint<HttpRequest, CompletableFuture<HttpResponse>> transformedSecondary = transformations.apply(TransformationEdge.secondary, secondary);
         Endpoint<HttpRequest, CompletableFuture<HttpResponse>> transformedCandidate = transformations.apply(TransformationEdge.candidate, candidate);
@@ -163,7 +153,7 @@ public class ReactorHttpDifferenceProxy {
                 transformedPrimary,
                 transformedSecondary,
                 transformedCandidate,
-                analyzer,
+                analyzerWithRepo,
                 Endpoint.from("liftRequest", () -> lifter::liftRequest),
                 Endpoint.from("liftResponse", () -> lifter::liftResponse),
                 Endpoint.from("responsePicker", () -> responsePicker),
@@ -180,37 +170,35 @@ public class ReactorHttpDifferenceProxy {
         );
 
         ControlFlowLogger controlFlow = new ControlFlowLogger();
-        
+
         return Mono.fromFuture(
-                perRequestEndpoint.apply(req).whenComplete((response, t)->{
-                    if(t != null) {
-                        log.error("request failed to get response",t);
-                        res
-                        .status(HttpResponseStatus.INTERNAL_SERVER_ERROR)
-                        .sendString(Mono.just(t.getMessage())).then();
+                perRequestEndpoint.apply(req).whenComplete((response, t) -> {
+                    if (t != null) {
+                        log.error("request failed to get response", t);
+                        res.status(HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                                .sendString(Mono.just(t.getMessage())).then();
+                    } else {
+                        log.info("Sent response with status {}", response.getStatus());
                     }
                     log.info(controlFlow.toString());
-                }))
-                .flatMap(r ->
-                    res
-                    .status(HttpResponseStatus.parseLine(r.getStatus()))
-                    .headers(HttpMessage.toHttpHeaders(r.headers))
-                    .sendString(Mono.just(r.body))
-                    .then()
-                );
+                })
+        ).flatMap(r ->
+                res.status(HttpResponseStatus.parseLine(r.getStatus()))
+                        .headers(HttpMessage.toHttpHeaders(r.headers))
+                        .sendString(Mono.just(r.body))
+                        .then()
+        );
     }
 
-
-    private static Set<HttpMethod> methodsWithSideEffects =
+    private static final Set<HttpMethod> methodsWithSideEffects =
             Stream.of(
-                    HttpMethod.POST,
+                   // HttpMethod.POST,
                     HttpMethod.PUT,
                     HttpMethod.PATCH,
                     HttpMethod.DELETE
             ).collect(Collectors.toSet());
 
-    public void clear(){
+    public void clear() {
         lastReset = new Date();
     }
-
 }

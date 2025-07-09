@@ -1,3 +1,4 @@
+//This controller acts as the backend API for your Diffy UI
 package ai.diffy
 
 import ai.diffy.analysis.{DifferencesFilterFactory, DynamicAnalyzer, JoinedEndpoint}
